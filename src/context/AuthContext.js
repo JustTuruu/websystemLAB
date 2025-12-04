@@ -211,7 +211,7 @@ export function AuthProvider({ children }) {
     try {
       if (!state.user) throw new Error("Хэрэглэгч нэвтрээгүй байна");
 
-      const response = await fetch(`${API_URL}/users/${state.user.id}`, {
+      const response = await fetch(`${API_URL}/users/${state.user._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
@@ -244,7 +244,7 @@ export function AuthProvider({ children }) {
 
     try {
       const response = await fetch(
-        `${API_URL}/users/${state.user.id}/friends`,
+        `${API_URL}/users/${state.user._id}/friends`,
         {
           method: "POST",
           headers: {
@@ -269,7 +269,7 @@ export function AuthProvider({ children }) {
 
     try {
       const response = await fetch(
-        `${API_URL}/users/${state.user.id}/friends/${friendId}`,
+        `${API_URL}/users/${state.user._id}/friends/${friendId}`,
         {
           method: "DELETE",
         }
@@ -308,6 +308,51 @@ export function AuthProvider({ children }) {
     }
   };
 
+  // Хэрэглэгч хайх (нэрээр)
+  const searchUsers = async (query) => {
+    try {
+      const response = await fetch(
+        `${API_URL}/users/search/${encodeURIComponent(query)}`
+      );
+      if (!response.ok) throw new Error("Хайхад алдаа гарлаа");
+      return await response.json();
+    } catch (error) {
+      console.error("Error searching users:", error);
+      return [];
+    }
+  };
+
+  // Username-аар найз нэмэх
+  const addFriendByUsername = async (username) => {
+    if (!state.user) return { success: false, error: "Нэвтрээгүй байна" };
+
+    try {
+      const response = await fetch(
+        `${API_URL}/users/${state.user._id}/friends/add-by-username`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ username }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return { success: false, error: data.error };
+      }
+
+      saveCurrentUser(data.user);
+      dispatch({ type: actionTypes.SET_USER, payload: data.user });
+      return { success: true, addedFriend: data.addedFriend };
+    } catch (error) {
+      console.error("Error adding friend by username:", error);
+      return { success: false, error: "Найз нэмэхэд алдаа гарлаа" };
+    }
+  };
+
   const value = {
     ...state,
     register,
@@ -319,6 +364,8 @@ export function AuthProvider({ children }) {
     removeFriend,
     listUsers,
     getUserById,
+    searchUsers,
+    addFriendByUsername,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

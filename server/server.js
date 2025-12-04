@@ -54,6 +54,26 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
+// GET: Хэрэглэгч хайх (нэрээр) - :id route-ээс ӨМНӨ байх ёстой!
+app.get("/api/users/search/:query", async (req, res) => {
+  try {
+    const query = req.params.query;
+    // username эсвэл name-аар хайх (case-insensitive)
+    const users = await User.find(
+      {
+        $or: [
+          { username: { $regex: query, $options: "i" } },
+          { name: { $regex: query, $options: "i" } },
+        ],
+      },
+      "-password"
+    );
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: "Хэрэглэгч хайхад алдаа гарлаа" });
+  }
+});
+
 // GET: Нэг хэрэглэгч
 app.get("/api/users/:id", async (req, res) => {
   try {
@@ -144,7 +164,7 @@ app.put("/api/users/:id", async (req, res) => {
   }
 });
 
-// POST: Найз нэмэх
+// POST: Найз нэмэх (ID-аар)
 app.post("/api/users/:id/friends", async (req, res) => {
   const { friendId } = req.body;
 
@@ -157,6 +177,48 @@ app.post("/api/users/:id/friends", async (req, res) => {
 
     const { password: _, ...userWithoutPassword } = user.toObject();
     res.json(userWithoutPassword);
+  } catch (err) {
+    res.status(500).json({ error: "Найз нэмэхэд алдаа гарлаа" });
+  }
+});
+
+// POST: Найз нэмэх (username-аар хайж)
+app.post("/api/users/:id/friends/add-by-username", async (req, res) => {
+  const { username } = req.body;
+
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "Хэрэглэгч олдсонгүй" });
+
+    // Найзыг username-аар хайх
+    const friend = await User.findOne({ username });
+    if (!friend) return res.status(404).json({ error: "Найз олдсонгүй" });
+
+    if (friend._id.toString() === req.params.id) {
+      return res.status(400).json({ error: "Өөрийгөө найз болгох боломжгүй" });
+    }
+
+    // Аль хэдийн найз эсэхийг шалгах
+    if (user.friends.includes(friend._id.toString())) {
+      return res
+        .status(400)
+        .json({ error: "Энэ хэрэглэгч аль хэдийн таны найз байна" });
+    }
+
+    // Найз нэмэх
+    user.friends.push(friend._id.toString());
+    await user.save();
+
+    const { password: _, ...userWithoutPassword } = user.toObject();
+    res.json({
+      user: userWithoutPassword,
+      addedFriend: {
+        _id: friend._id,
+        username: friend.username,
+        name: friend.name,
+        avatar: friend.avatar,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: "Найз нэмэхэд алдаа гарлаа" });
   }
