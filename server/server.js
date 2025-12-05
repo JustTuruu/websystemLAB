@@ -4,7 +4,7 @@ const bodyParser = require("body-parser");
 const mongoose = require("mongoose");
 const User = require("./models/User");
 const Place = require("./models/Place");
-const session = require("express-session");
+const jwt = require("jsonwebtoken");
 mongoose
   .connect("mongodb://localhost:27017/placesdb")
   .then(() => console.log("MongoDB connected"))
@@ -12,42 +12,37 @@ mongoose
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+const JWT_SECRET = "your_jwt_secret_key";
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(
-  session({
-    secret: "your_secret_key",
-    resave: false,
-    saveUninitialized: true,
-    cookie: { secure: false },
-  })
-);
 
-// Login-required middleware
+// JWT-based auth middleware
 function requireLogin(req, res, next) {
-  if (!req.session.username) {
-    return res.status(401).json({ error: "Эхлээд login хийнэ үү" });
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res
+      .status(401)
+      .json({ error: "Эхлээд login хийнэ үү (Bearer token шаардлагатай)" });
   }
-  next();
+
+  const token = authHeader.split(" ")[1];
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded; // { id, username, iat, exp }
+    next();
+  } catch (err) {
+    return res
+      .status(401)
+      .json({ error: "Token хүчингүй эсвэл хугацаа дууссан байна" });
+  }
 }
 
-app.post("/login", (req, res) => {
-  const { username } = req.body;
-  req.session.username = username;
-  res.send("Amjilttai nevtrelee " + username);
-});
-
+// Test/profile endpoint using JWT
 app.get("/profile", requireLogin, (req, res) => {
-  if (!req.session.username) {
-    return res.send("Login ehleed hiine uu");
-  }
-  res.send("Hi: " + req.session.username);
-});
-
-app.post("/logout", (req, res) => {
-  req.session.destroy(() => {
-    res.send("Amjilttai garlaa" + req.session.username);
+  res.json({
+    message: "JWT-р амжилттай нэвтэрсэн хэрэглэгч",
+    user: req.user,
   });
 });
 
@@ -145,7 +140,16 @@ app.post("/api/users/login", async (req, res) => {
     }
 
     const { password: _, ...userWithoutPassword } = user.toObject();
-    res.json(userWithoutPassword);
+    const token = jwt.sign(
+      { id: user._id.toString(), username: user.username },
+      JWT_SECRET,
+      { expiresIn: "1h" }
+    );
+
+    res.json({
+      token,
+      user: userWithoutPassword,
+    });
   } catch (err) {
     res.status(500).json({ error: "Login хийхэд алдаа гарлаа" });
   }
