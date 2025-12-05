@@ -160,7 +160,6 @@ export function AuthProvider({ children }) {
       dispatch({ type: actionTypes.LOGIN_SUCCESS, payload: user });
       return user;
     } catch (error) {
-      console.log("🔴 LOGIN: Login failed:", error.message);
       dispatch({ type: actionTypes.LOGIN_FAILURE, payload: error.message });
       throw error;
     }

@@ -54,7 +54,7 @@ app.get("/api/users", async (req, res) => {
   }
 });
 
-// GET: Хэрэглэгч хайх (нэрээр) - :id route-ээс ӨМНӨ байх ёстой!
+// GET: Хэрэглэгч хайх (нэрээр) -
 app.get("/api/users/search/:query", async (req, res) => {
   try {
     const query = req.params.query;
@@ -295,7 +295,8 @@ app.put("/api/places/:id", async (req, res) => {
     const place = await Place.findById(req.params.id);
     if (!place) return res.status(404).json({ error: "Газар олдсонгүй" });
 
-    if (place.userId !== userId) {
+    // userId-г string болгож харьцуулах
+    if (place.userId.toString() !== userId.toString()) {
       return res
         .status(403)
         .json({ error: "Зөвхөн өөрийн газрыг засах боломжтой" });
@@ -322,7 +323,8 @@ app.delete("/api/places/:id", async (req, res) => {
     const place = await Place.findById(req.params.id);
     if (!place) return res.status(404).json({ error: "Газар олдсонгүй" });
 
-    if (place.userId !== userId) {
+    // userId-г string болгоh
+    if (place.userId.toString() !== userId.toString()) {
       return res
         .status(403)
         .json({ error: "Зөвхөн өөрийн газрыг устгах боломжтой" });

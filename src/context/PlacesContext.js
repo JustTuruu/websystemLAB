@@ -39,14 +39,14 @@ function placesReducer(state, action) {
       return {
         ...state,
         places: state.places.map((place) =>
-          place.place_id === action.payload.id ? action.payload : place
+          place._id === action.payload._id ? action.payload : place
         ),
       };
 
     case actionTypes.DELETE_PLACE:
       return {
         ...state,
-        places: state.places.filter((place) => place.id !== action.payload),
+        places: state.places.filter((place) => place._id !== action.payload),
       };
 
     case actionTypes.SET_LOADING:
@@ -138,7 +138,7 @@ export function PlacesProvider({ children }) {
 
     try {
       dispatch({ type: actionTypes.SET_LOADING, payload: true });
-      const response = await fetch(`${API_URL}/places/${place.id}`, {
+      const response = await fetch(`${API_URL}/places/${place._id}`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
