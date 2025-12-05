@@ -12,7 +12,6 @@ mongoose
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -25,13 +24,21 @@ app.use(
   })
 );
 
+// Login-required middleware
+function requireLogin(req, res, next) {
+  if (!req.session.username) {
+    return res.status(401).json({ error: "Эхлээд login хийнэ үү" });
+  }
+  next();
+}
+
 app.post("/login", (req, res) => {
   const { username } = req.body;
   req.session.username = username;
   res.send("Amjilttai nevtrelee " + username);
 });
 
-app.get("/profile", (req, res) => {
+app.get("/profile", requireLogin, (req, res) => {
   if (!req.session.username) {
     return res.send("Login ehleed hiine uu");
   }
@@ -45,7 +52,7 @@ app.post("/logout", (req, res) => {
 });
 
 // GET: Бүх хэрэглэгчид
-app.get("/api/users", async (req, res) => {
+app.get("/api/users", requireLogin, async (req, res) => {
   try {
     const users = await User.find({}, "-password");
     res.json(users);
@@ -55,7 +62,7 @@ app.get("/api/users", async (req, res) => {
 });
 
 // GET: Хэрэглэгч хайх (нэрээр) -
-app.get("/api/users/search/:query", async (req, res) => {
+app.get("/api/users/search/:query", requireLogin, async (req, res) => {
   try {
     const query = req.params.query;
     // username эсвэл name-аар хайх (case-insensitive)
@@ -75,7 +82,7 @@ app.get("/api/users/search/:query", async (req, res) => {
 });
 
 // GET: Нэг хэрэглэгч
-app.get("/api/users/:id", async (req, res) => {
+app.get("/api/users/:id", requireLogin, async (req, res) => {
   try {
     const user = await User.findById(req.params.id, "-password");
     if (!user) return res.status(404).json({ error: "Хэрэглэгч олдсонгүй" });
@@ -145,7 +152,7 @@ app.post("/api/users/login", async (req, res) => {
 });
 
 // PUT: Хэрэглэгч засах
-app.put("/api/users/:id", async (req, res) => {
+app.put("/api/users/:id", requireLogin, async (req, res) => {
   const { name, email, avatar } = req.body;
 
   try {
@@ -165,7 +172,7 @@ app.put("/api/users/:id", async (req, res) => {
 });
 
 // POST: Найз нэмэх (ID-аар)
-app.post("/api/users/:id/friends", async (req, res) => {
+app.post("/api/users/:id/friends", requireLogin, async (req, res) => {
   const { friendId } = req.body;
 
   try {
@@ -183,67 +190,77 @@ app.post("/api/users/:id/friends", async (req, res) => {
 });
 
 // POST: Найз нэмэх (username-аар хайж)
-app.post("/api/users/:id/friends/add-by-username", async (req, res) => {
-  const { username } = req.body;
+app.post(
+  "/api/users/:id/friends/add-by-username",
+  requireLogin,
+  async (req, res) => {
+    const { username } = req.body;
 
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ error: "Хэрэглэгч олдсонгүй" });
+    try {
+      const user = await User.findById(req.params.id);
+      if (!user) return res.status(404).json({ error: "Хэрэглэгч олдсонгүй" });
 
-    // Найзыг username-аар хайх
-    const friend = await User.findOne({ username });
-    if (!friend) return res.status(404).json({ error: "Найз олдсонгүй" });
+      // Найзыг username-аар хайх
+      const friend = await User.findOne({ username });
+      if (!friend) return res.status(404).json({ error: "Найз олдсонгүй" });
 
-    if (friend._id.toString() === req.params.id) {
-      return res.status(400).json({ error: "Өөрийгөө найз болгох боломжгүй" });
+      if (friend._id.toString() === req.params.id) {
+        return res
+          .status(400)
+          .json({ error: "Өөрийгөө найз болгох боломжгүй" });
+      }
+
+      // Аль хэдийн найз эсэхийг шалгах
+      if (user.friends.includes(friend._id.toString())) {
+        return res
+          .status(400)
+          .json({ error: "Энэ хэрэглэгч аль хэдийн таны найз байна" });
+      }
+
+      // Найз нэмэх
+      user.friends.push(friend._id.toString());
+      await user.save();
+
+      const { password: _, ...userWithoutPassword } = user.toObject();
+      res.json({
+        user: userWithoutPassword,
+        addedFriend: {
+          _id: friend._id,
+          username: friend.username,
+          name: friend.name,
+          avatar: friend.avatar,
+        },
+      });
+    } catch (err) {
+      res.status(500).json({ error: "Найз нэмэхэд алдаа гарлаа" });
     }
-
-    // Аль хэдийн найз эсэхийг шалгах
-    if (user.friends.includes(friend._id.toString())) {
-      return res
-        .status(400)
-        .json({ error: "Энэ хэрэглэгч аль хэдийн таны найз байна" });
-    }
-
-    // Найз нэмэх
-    user.friends.push(friend._id.toString());
-    await user.save();
-
-    const { password: _, ...userWithoutPassword } = user.toObject();
-    res.json({
-      user: userWithoutPassword,
-      addedFriend: {
-        _id: friend._id,
-        username: friend.username,
-        name: friend.name,
-        avatar: friend.avatar,
-      },
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Найз нэмэхэд алдаа гарлаа" });
   }
-});
+);
 
 // DELETE: Найз устгах
-app.delete("/api/users/:id/friends/:friendId", async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ error: "Хэрэглэгч олдсонгүй" });
+app.delete(
+  "/api/users/:id/friends/:friendId",
+  requireLogin,
+  async (req, res) => {
+    try {
+      const user = await User.findById(req.params.id);
+      if (!user) return res.status(404).json({ error: "Хэрэглэгч олдсонгүй" });
 
-    user.friends = user.friends.filter((fid) => fid !== req.params.friendId);
-    await user.save();
+      user.friends = user.friends.filter((fid) => fid !== req.params.friendId);
+      await user.save();
 
-    const { password: _, ...userWithoutPassword } = user.toObject();
-    res.json(userWithoutPassword);
-  } catch (err) {
-    res.status(500).json({ error: "Найз устгахад алдаа гарлаа" });
+      const { password: _, ...userWithoutPassword } = user.toObject();
+      res.json(userWithoutPassword);
+    } catch (err) {
+      res.status(500).json({ error: "Найз устгахад алдаа гарлаа" });
+    }
   }
-});
+);
 
 // ---------------- PLACES ---------------- //
 
 // GET: Бүх газар
-app.get("/api/places", async (req, res) => {
+app.get("/api/places", requireLogin, async (req, res) => {
   try {
     const places = await Place.find();
     res.json(places);
@@ -253,7 +270,7 @@ app.get("/api/places", async (req, res) => {
 });
 
 // GET: Нэг газар
-app.get("/api/places/:id", async (req, res) => {
+app.get("/api/places/:id", requireLogin, async (req, res) => {
   try {
     const place = await Place.findById(req.params.id);
     if (!place) return res.status(404).json({ error: "Газар олдсонгүй" });
@@ -264,7 +281,7 @@ app.get("/api/places/:id", async (req, res) => {
 });
 
 // POST: Газар нэмэх
-app.post("/api/places", async (req, res) => {
+app.post("/api/places", requireLogin, async (req, res) => {
   const { name, description, location, rating, image, userId } = req.body;
 
   if (!name || !description || !location || !rating || !image || !userId) {
@@ -288,7 +305,7 @@ app.post("/api/places", async (req, res) => {
 });
 
 // PUT: Газар засах
-app.put("/api/places/:id", async (req, res) => {
+app.put("/api/places/:id", requireLogin, async (req, res) => {
   const { name, description, location, rating, image, userId } = req.body;
 
   try {
@@ -316,7 +333,7 @@ app.put("/api/places/:id", async (req, res) => {
 });
 
 // DELETE: Газар устгах
-app.delete("/api/places/:id", async (req, res) => {
+app.delete("/api/places/:id", requireLogin, async (req, res) => {
   const { userId } = req.body;
 
   try {
@@ -338,7 +355,7 @@ app.delete("/api/places/:id", async (req, res) => {
 });
 
 // GET: Хэрэглэгчийн газрууд
-app.get("/api/users/:userId/places", async (req, res) => {
+app.get("/api/users/:userId/places", requireLogin, async (req, res) => {
   try {
     const places = await Place.find({ userId: req.params.userId });
     res.json(places);
