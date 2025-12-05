@@ -55,7 +55,7 @@ function FriendProfile() {
     );
   }
 
-  const friendPlaces = places.filter((p) => p.userId === friend.id);
+  const friendPlaces = places.filter((p) => p.userId === friend._id);
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: 20 }}>
@@ -104,7 +104,7 @@ function FriendProfile() {
                 width: 64,
                 height: 64,
                 borderRadius: "50%",
-                background: colorFor(friend.id),
+                background: colorFor(friend._id),
                 color: "#fff",
                 display: "flex",
                 alignItems: "center",
@@ -113,13 +113,13 @@ function FriendProfile() {
                 fontSize: 24,
               }}
             >
-              {friend.name?.charAt(0)?.toUpperCase()}
+              {friend.name?.charAt(0)?.toUpperCase() || "?"}
             </div>
           )}
           <div>
             <div style={{ fontWeight: 700, fontSize: 18 }}>{friend.name}</div>
             <div style={{ color: "#666" }}>{friend.email}</div>
-            {me?.id === friend.id && (
+            {me?._id === friend._id && (
               <div style={{ color: "#999", fontSize: 13 }}>
                 Энэ бол таны профайл
               </div>
@@ -134,7 +134,7 @@ function FriendProfile() {
       ) : (
         <div className="places-grid">
           {friendPlaces.map((place) => (
-            <div key={place.id} className="place-card">
+            <div key={place._id} className="place-card">
               <img
                 src={place.image}
                 alt={place.name}
@@ -149,7 +149,7 @@ function FriendProfile() {
                 <p className="location">{place.location}</p>
                 <p className="description">{place.description}</p>
                 <div className="rating"> {place.rating}</div>
-                <Link to={`/places/${place.id}`} className="view-details-btn">
+                <Link to={`/places/${place._id}`} className="view-details-btn">
                   Дэлгэрэнгүй үзэх
                 </Link>
               </div>

@@ -83,7 +83,7 @@ function Profile() {
       <div className="profile-card">
         <div className="profile-avatar">
           <div className="avatar-circle">
-            {user.name.charAt(0).toUpperCase()}
+            {user?.name?.charAt(0)?.toUpperCase() || "?"}
           </div>
         </div>
 

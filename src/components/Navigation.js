@@ -72,7 +72,7 @@ function Navigation() {
               <div className="user-menu">
                 <button className="user-btn" onClick={toggleUserMenu}>
                   <span className="user-avatar">
-                    {user?.name?.charAt(0).toUpperCase()}
+                    {user?.name?.charAt(0)?.toUpperCase() || "?"}
                   </span>
                   <span className="user-name">{user?.name}</span>
                   <span className="dropdown-arrow">▼</span>

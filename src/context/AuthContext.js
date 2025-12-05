@@ -1,7 +1,19 @@
-import React, { createContext, useContext, useReducer, useEffect } from "react";
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 
 // API base URL
 const API_URL = "http://localhost:5001/api";
+
+// Token expiry time (30 seconds for testing, change to longer for production)
+const TOKEN_EXPIRY_TIME = 30 * 1000; // 30 seconds
+const WARNING_BEFORE_EXPIRY = 10 * 1000;
 
 // Initial state
 const initialState = {
@@ -38,7 +50,7 @@ function authReducer(state, action) {
     case actionTypes.LOGIN_SUCCESS:
     case actionTypes.REGISTER_SUCCESS:
       console.log(
-        "🟢 REDUCER: LOGIN_SUCCESS - Setting isAuthenticated to true",
+        "REDUCER: LOGIN_SUCCESS - Setting isAuthenticated to true",
         action.payload
       );
       return {
@@ -120,14 +132,112 @@ const saveCurrentUser = (user) => {
 // Context Provider Component
 export function AuthProvider({ children }) {
   const [state, dispatch] = useReducer(authReducer, initialState);
+  const [showSessionWarning, setShowSessionWarning] = useState(false);
+  const sessionTimerRef = useRef(null);
+  const warningTimerRef = useRef(null);
+
+  // Clear all timers
+  const clearTimers = useCallback(() => {
+    if (sessionTimerRef.current) {
+      clearTimeout(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+    if (warningTimerRef.current) {
+      clearTimeout(warningTimerRef.current);
+      warningTimerRef.current = null;
+    }
+  }, []);
+
+  // Handle session expired
+  const handleSessionExpired = useCallback(() => {
+    clearTimers();
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
+    saveCurrentUser(null);
+    dispatch({ type: actionTypes.LOGOUT });
+    alert("Таны session дууслаа. Дахин нэвтэрнэ үү.");
+  }, [clearTimers]);
+
+  // Start session timer after login
+  const startSessionTimer = useCallback(() => {
+    clearTimers();
+    console.log(
+      "🕐 Session timer started - warning in",
+      (TOKEN_EXPIRY_TIME - WARNING_BEFORE_EXPIRY) / 1000,
+      "seconds"
+    );
+
+    // Warning timer - WARNING_BEFORE_EXPIRY секундын дараа сэрэмжлүүлэг үзүүлэх
+    warningTimerRef.current = setTimeout(() => {
+      console.log("⚠️ Showing session warning modal");
+      setShowSessionWarning(true);
+    }, TOKEN_EXPIRY_TIME - WARNING_BEFORE_EXPIRY);
+
+    // Session expiry timer - TOKEN_EXPIRY_TIME секундын дараа logout
+    sessionTimerRef.current = setTimeout(() => {
+      console.log("❌ Session expired!");
+      setShowSessionWarning(false);
+      handleSessionExpired();
+    }, TOKEN_EXPIRY_TIME);
+  }, [clearTimers, handleSessionExpired]);
+
+  // Extend session - refresh token
+  const extendSession = useCallback(async () => {
+    console.log("🔄 Extending session...");
+    try {
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (!refreshToken) {
+        throw new Error("Refresh token олдсонгүй");
+      }
+
+      const response = await fetch(`${API_URL}/auth/refresh`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Token refresh амжилтгүй");
+      }
+
+      const data = await response.json();
+      localStorage.setItem("access_token", data.access_token);
+      console.log("✅ Session extended successfully!");
+
+      setShowSessionWarning(false);
+      startSessionTimer(); // Restart timer
+
+      return true;
+    } catch (error) {
+      console.error("Session extend error:", error);
+      handleSessionExpired();
+      return false;
+    }
+  }, [startSessionTimer, handleSessionExpired]);
+
+  // Decline session extension - logout
+  const declineSessionExtend = useCallback(() => {
+    console.log("👋 User declined session extension");
+    setShowSessionWarning(false);
+    handleSessionExpired();
+  }, [handleSessionExpired]);
 
   // Load user from localStorage on app start
   useEffect(() => {
     const savedUser = getCurrentUser();
-    if (savedUser) {
+    const accessToken = localStorage.getItem("access_token");
+    if (savedUser && accessToken) {
       dispatch({ type: actionTypes.SET_USER, payload: savedUser });
+      startSessionTimer();
     }
-  }, []);
+  }, [startSessionTimer]);
+
+  // Cleanup timers on unmount
+  useEffect(() => {
+    return () => clearTimers();
+  }, [clearTimers]);
 
   // Login function with API
   const login = async (username, password) => {
@@ -153,11 +263,27 @@ export function AuthProvider({ children }) {
         throw new Error(error.error || "Нэвтрэх үед алдаа гарлаа");
       }
 
-      const user = await response.json();
-      console.log("🔵 LOGIN: Login successful:", user);
+      const data = await response.json();
+      console.log("🔵 LOGIN: Login successful:", data);
 
+      // data structure: { access_token, refresh_token, expires_in, token_type, user }
+      const { access_token, refresh_token, user } = data;
+
+      // Save tokens to localStorage
+      if (access_token) {
+        localStorage.setItem("access_token", access_token);
+      }
+      if (refresh_token) {
+        localStorage.setItem("refresh_token", refresh_token);
+      }
+
+      // Save user object
       saveCurrentUser(user);
       dispatch({ type: actionTypes.LOGIN_SUCCESS, payload: user });
+
+      // Start session timer
+      startSessionTimer();
+
       return user;
     } catch (error) {
       dispatch({ type: actionTypes.LOGIN_FAILURE, payload: error.message });
@@ -200,7 +326,29 @@ export function AuthProvider({ children }) {
   };
 
   // Logout function
-  const logout = () => {
+  const logout = async () => {
+    // Clear timers first
+    clearTimers();
+    setShowSessionWarning(false);
+
+    try {
+      const refreshToken = localStorage.getItem("refresh_token");
+      if (refreshToken) {
+        // Сервер дээр refresh token-г устгах
+        await fetch(`${API_URL}/auth/logout`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+      }
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
     saveCurrentUser(null);
     dispatch({ type: actionTypes.LOGOUT });
   };
@@ -214,6 +362,7 @@ export function AuthProvider({ children }) {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
         body: JSON.stringify(userData),
       });
@@ -248,6 +397,7 @@ export function AuthProvider({ children }) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
           },
           body: JSON.stringify({ friendId }),
         }
@@ -271,6 +421,9 @@ export function AuthProvider({ children }) {
         `${API_URL}/users/${state.user._id}/friends/${friendId}`,
         {
           method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+          },
         }
       );
 
@@ -287,7 +440,11 @@ export function AuthProvider({ children }) {
   // Directory: safe user listing (no password)
   const listUsers = async () => {
     try {
-      const response = await fetch(`${API_URL}/users`);
+      const response = await fetch(`${API_URL}/users`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        },
+      });
       if (!response.ok) throw new Error("Хэрэглэгчдийг татахад алдаа гарлаа");
       return await response.json();
     } catch (error) {
@@ -298,7 +455,11 @@ export function AuthProvider({ children }) {
 
   const getUserById = async (id) => {
     try {
-      const response = await fetch(`${API_URL}/users/${id}`);
+      const response = await fetch(`${API_URL}/users/${id}`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+        },
+      });
       if (!response.ok) throw new Error("Хэрэглэгч олдсонгүй");
       return await response.json();
     } catch (error) {
@@ -311,7 +472,12 @@ export function AuthProvider({ children }) {
   const searchUsers = async (query) => {
     try {
       const response = await fetch(
-        `${API_URL}/users/search/${encodeURIComponent(query)}`
+        `${API_URL}/users/search/${encodeURIComponent(query)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
+          },
+        }
       );
       if (!response.ok) throw new Error("Хайхад алдаа гарлаа");
       return await response.json();
@@ -332,6 +498,7 @@ export function AuthProvider({ children }) {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            Authorization: `Bearer ${localStorage.getItem("access_token")}`,
           },
           body: JSON.stringify({ username }),
         }
@@ -365,9 +532,85 @@ export function AuthProvider({ children }) {
     getUserById,
     searchUsers,
     addFriendByUsername,
+    // Session management
+    showSessionWarning,
+    extendSession,
+    declineSessionExtend,
   };
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <>
+      <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+
+      {/* Session Warning Modal */}
+      {showSessionWarning && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 9999,
+          }}
+        >
+          <div
+            style={{
+              background: "white",
+              padding: "30px",
+              borderRadius: "10px",
+              textAlign: "center",
+              maxWidth: "400px",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.3)",
+            }}
+          >
+            <h2 style={{ marginTop: 0, color: "#e74c3c" }}>
+              ⚠️ Session дуусах гэж байна!
+            </h2>
+            <p style={{ color: "#666", marginBottom: "20px" }}>
+              Таны session удахгүй дуусна. Үргэлжлүүлэх үү?
+            </p>
+            <div
+              style={{ display: "flex", gap: "10px", justifyContent: "center" }}
+            >
+              <button
+                onClick={extendSession}
+                style={{
+                  padding: "10px 25px",
+                  background: "#27ae60",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "5px",
+                  cursor: "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                ✓ Тийм, сунгах
+              </button>
+              <button
+                onClick={declineSessionExtend}
+                style={{
+                  padding: "10px 25px",
+                  background: "#e74c3c",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "5px",
+                  cursor: "pointer",
+                  fontSize: "16px",
+                }}
+              >
+                ✗ Үгүй, гарах
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 // Custom hook to use Auth Context

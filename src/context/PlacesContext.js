@@ -72,18 +72,23 @@ const PlacesContext = createContext();
 // Context Provider Component
 export function PlacesProvider({ children }) {
   const [state, dispatch] = useReducer(placesReducer, initialState);
-  const { user } = useAuth();
-
-  // Load places from API on component mount
-  useEffect(() => {
-    fetchPlaces();
-  }, []);
+  const { user, isAuthenticated } = useAuth();
 
   // Fetch all places from API
   const fetchPlaces = async () => {
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      console.log("No token, skipping places fetch");
+      return;
+    }
+    
     try {
       dispatch({ type: actionTypes.SET_LOADING, payload: true });
-      const response = await fetch(`${API_URL}/places`);
+      const response = await fetch(`${API_URL}/places`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
       if (!response.ok) throw new Error("Газруудыг татахад алдаа гарлаа");
       const data = await response.json();
       dispatch({ type: actionTypes.SET_PLACES, payload: data });
@@ -94,6 +99,13 @@ export function PlacesProvider({ children }) {
       dispatch({ type: actionTypes.SET_LOADING, payload: false });
     }
   };
+
+  // Load places when user logs in
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchPlaces();
+    }
+  }, [isAuthenticated]);
 
   // Action creators
   const addPlace = async (placeData) => {
@@ -107,6 +119,7 @@ export function PlacesProvider({ children }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
         body: JSON.stringify({
           ...placeData,
@@ -142,6 +155,7 @@ export function PlacesProvider({ children }) {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
         body: JSON.stringify({
           ...place,
@@ -177,6 +191,7 @@ export function PlacesProvider({ children }) {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
         body: JSON.stringify({
           userId: user._id,

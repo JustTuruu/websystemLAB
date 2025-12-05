@@ -12,7 +12,9 @@ mongoose
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const JWT_SECRET = "your_jwt_secret_key";
+const ACCESS_TOKEN_SECRET = "your_access_secret_key";
+const REFRESH_TOKEN_SECRET = "your_refresh_secret_key";
+let refreshTokens = [];
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -28,7 +30,7 @@ function requireLogin(req, res, next) {
 
   const token = authHeader.split(" ")[1];
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
     req.user = decoded; // { id, username, iat, exp }
     next();
   } catch (err) {
@@ -36,6 +38,22 @@ function requireLogin(req, res, next) {
       .status(401)
       .json({ error: "Token хүчингүй эсвэл хугацаа дууссан байна" });
   }
+}
+
+function generateAccessToken(user) {
+  return jwt.sign(
+    { id: user._id.toString(), username: user.username },
+    ACCESS_TOKEN_SECRET,
+    { expiresIn: "30s" }
+  );
+}
+
+function generateRefreshToken(user) {
+  return jwt.sign(
+    { id: user._id.toString(), username: user.username },
+    REFRESH_TOKEN_SECRET,
+    { expiresIn: "30s" }
+  );
 }
 
 // Test/profile endpoint using JWT
@@ -140,19 +158,66 @@ app.post("/api/users/login", async (req, res) => {
     }
 
     const { password: _, ...userWithoutPassword } = user.toObject();
-    const token = jwt.sign(
-      { id: user._id.toString(), username: user.username },
-      JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+
+    refreshTokens.push(refreshToken);
 
     res.json({
-      token,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: 30,
+      token_type: "Bearer",
       user: userWithoutPassword,
     });
   } catch (err) {
     res.status(500).json({ error: "Login хийхэд алдаа гарлаа" });
   }
+});
+
+// POST: Refresh access token using refresh token
+app.post("/api/auth/refresh", async (req, res) => {
+  const { refresh_token } = req.body;
+
+  if (!refresh_token) {
+    return res.status(400).json({ error: "Refresh token шаардлагатай" });
+  }
+
+  if (!refreshTokens.includes(refresh_token)) {
+    return res.status(401).json({ error: "Refresh token хүчингүй" });
+  }
+
+  try {
+    const decoded = jwt.verify(refresh_token, REFRESH_TOKEN_SECRET);
+
+    const newAccessToken = jwt.sign(
+      { id: decoded.id, username: decoded.username },
+      ACCESS_TOKEN_SECRET,
+      { expiresIn: "30s" }
+    );
+
+    res.json({
+      access_token: newAccessToken,
+      expires_in: 30,
+      token_type: "Bearer",
+    });
+  } catch (err) {
+    return res
+      .status(401)
+      .json({ error: "Refresh token хугацаа дууссан эсвэл буруу" });
+  }
+});
+
+// POST: Logout (refresh token-г устгах)
+app.post("/api/auth/logout", (req, res) => {
+  const { refresh_token } = req.body;
+  if (!refresh_token) {
+    return res.status(400).json({ error: "Refresh token шаардлагатай" });
+  }
+
+  refreshTokens = refreshTokens.filter((t) => t !== refresh_token);
+  res.json({ message: "Амжилттай гарлаа" });
 });
 
 // PUT: Хэрэглэгч засах

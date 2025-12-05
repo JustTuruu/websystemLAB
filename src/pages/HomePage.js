@@ -107,7 +107,7 @@ function HomePage() {
                       fontSize: 18,
                     }}
                   >
-                    {f.name?.charAt(0)?.toUpperCase()}
+                    {f.name?.charAt(0)?.toUpperCase() || "?"}
                   </div>
                 )}
                 <div>
