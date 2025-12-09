@@ -81,7 +81,7 @@ export function PlacesProvider({ children }) {
       console.log("No token, skipping places fetch");
       return;
     }
-    
+
     try {
       dispatch({ type: actionTypes.SET_LOADING, payload: true });
       const response = await fetch(`${API_URL}/places`, {

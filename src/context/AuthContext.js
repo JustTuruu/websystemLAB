@@ -4,15 +4,13 @@ import React, {
   useReducer,
   useEffect,
   useState,
-  useCallback,
   useRef,
 } from "react";
 
 // API base URL
 const API_URL = "http://localhost:5001/api";
 
-// Token expiry time (30 seconds for testing, change to longer for production)
-const TOKEN_EXPIRY_TIME = 30 * 1000; // 30 seconds
+const TOKEN_EXPIRY_TIME = 30 * 1000;
 const WARNING_BEFORE_EXPIRY = 10 * 1000;
 
 // Initial state
@@ -137,7 +135,7 @@ export function AuthProvider({ children }) {
   const warningTimerRef = useRef(null);
 
   // Clear all timers
-  const clearTimers = useCallback(() => {
+  const clearTimers = () => {
     if (sessionTimerRef.current) {
       clearTimeout(sessionTimerRef.current);
       sessionTimerRef.current = null;
@@ -146,20 +144,21 @@ export function AuthProvider({ children }) {
       clearTimeout(warningTimerRef.current);
       warningTimerRef.current = null;
     }
-  }, []);
+  };
 
   // Handle session expired
-  const handleSessionExpired = useCallback(() => {
+  const handleSessionExpired = () => {
     clearTimers();
+    setShowSessionWarning(false);
     localStorage.removeItem("access_token");
     localStorage.removeItem("refresh_token");
     saveCurrentUser(null);
     dispatch({ type: actionTypes.LOGOUT });
     alert("Таны session дууслаа. Дахин нэвтэрнэ үү.");
-  }, [clearTimers]);
+  };
 
   // Start session timer after login
-  const startSessionTimer = useCallback(() => {
+  const startSessionTimer = () => {
     clearTimers();
     console.log(
       "🕐 Session timer started - warning in",
@@ -179,10 +178,10 @@ export function AuthProvider({ children }) {
       setShowSessionWarning(false);
       handleSessionExpired();
     }, TOKEN_EXPIRY_TIME);
-  }, [clearTimers, handleSessionExpired]);
+  };
 
   // Extend session - refresh token
-  const extendSession = useCallback(async () => {
+  const extendSession = async () => {
     console.log("🔄 Extending session...");
     try {
       const refreshToken = localStorage.getItem("refresh_token");
@@ -215,14 +214,14 @@ export function AuthProvider({ children }) {
       handleSessionExpired();
       return false;
     }
-  }, [startSessionTimer, handleSessionExpired]);
+  };
 
   // Decline session extension - logout
-  const declineSessionExtend = useCallback(() => {
+  const declineSessionExtend = () => {
     console.log("👋 User declined session extension");
     setShowSessionWarning(false);
     handleSessionExpired();
-  }, [handleSessionExpired]);
+  };
 
   // Load user from localStorage on app start
   useEffect(() => {
@@ -232,12 +231,14 @@ export function AuthProvider({ children }) {
       dispatch({ type: actionTypes.SET_USER, payload: savedUser });
       startSessionTimer();
     }
-  }, [startSessionTimer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cleanup timers on unmount
   useEffect(() => {
     return () => clearTimers();
-  }, [clearTimers]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Login function with API
   const login = async (username, password) => {
@@ -264,7 +265,6 @@ export function AuthProvider({ children }) {
       }
 
       const data = await response.json();
-      console.log("🔵 LOGIN: Login successful:", data);
 
       // data structure: { access_token, refresh_token, expires_in, token_type, user }
       const { access_token, refresh_token, user } = data;

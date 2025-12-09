@@ -12,7 +12,7 @@ mongoose
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const ACCESS_TOKEN_SECRET = "your_access_secret_key";
+const ACCESS_TOKEN_SECRET = "mykey";
 const REFRESH_TOKEN_SECRET = "your_refresh_secret_key";
 let refreshTokens = [];
 app.use(cors());
@@ -44,7 +44,7 @@ function generateAccessToken(user) {
   return jwt.sign(
     { id: user._id.toString(), username: user.username },
     ACCESS_TOKEN_SECRET,
-    { expiresIn: "30s" }
+    { expiresIn: "5m" }
   );
 }
 
@@ -52,7 +52,7 @@ function generateRefreshToken(user) {
   return jwt.sign(
     { id: user._id.toString(), username: user.username },
     REFRESH_TOKEN_SECRET,
-    { expiresIn: "30s" }
+    { expiresIn: "1d" }
   );
 }
 
