@@ -1,10 +1,11 @@
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
+const session = require("express-session");
 const mongoose = require("mongoose");
 const User = require("./models/User");
 const Place = require("./models/Place");
-const jwt = require("jsonwebtoken");
+
 mongoose
   .connect("mongodb://localhost:27017/placesdb")
   .then(() => console.log("MongoDB connected"))
@@ -12,55 +13,45 @@ mongoose
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const ACCESS_TOKEN_SECRET = "your_access_secret_key";
-const REFRESH_TOKEN_SECRET = "your_refresh_secret_key";
-let refreshTokens = [];
-app.use(cors());
+
+// CORS configuration - session ажиллахын тулд credentials шаардлагатай
+app.use(
+  cors({
+    origin: "http://localhost:3000",
+    credentials: true,
+  })
+);
+
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// JWT-based auth middleware
+app.use(
+  session({
+    secret: "nuuts tulhuur",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: false,
+      httpOnly: true,
+      maxAge: 15 * 60 * 1000,
+    },
+  })
+);
+
+// Session-based auth middleware
 function requireLogin(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res
-      .status(401)
-      .json({ error: "Эхлээд login хийнэ үү (Bearer token шаардлагатай)" });
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Эхлээд login хийнэ үү" });
   }
-
-  const token = authHeader.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, ACCESS_TOKEN_SECRET);
-    req.user = decoded; // { id, username, iat, exp }
-    next();
-  } catch (err) {
-    return res
-      .status(401)
-      .json({ error: "Token хүчингүй эсвэл хугацаа дууссан байна" });
-  }
+  next();
 }
 
-function generateAccessToken(user) {
-  return jwt.sign(
-    { id: user._id.toString(), username: user.username },
-    ACCESS_TOKEN_SECRET,
-    { expiresIn: "30s" }
-  );
-}
-
-function generateRefreshToken(user) {
-  return jwt.sign(
-    { id: user._id.toString(), username: user.username },
-    REFRESH_TOKEN_SECRET,
-    { expiresIn: "30s" }
-  );
-}
-
-// Test/profile endpoint using JWT
+// Test/profile endpoint
 app.get("/profile", requireLogin, (req, res) => {
   res.json({
-    message: "JWT-р амжилттай нэвтэрсэн хэрэглэгч",
-    user: req.user,
+    message: "Session-р амжилттай нэвтэрсэн хэрэглэгч",
+    userId: req.session.userId,
+    username: req.session.username,
   });
 });
 
@@ -157,18 +148,16 @@ app.post("/api/users/login", async (req, res) => {
         .json({ error: "Username эсвэл нууц үг буруу байна" });
     }
 
+    // Session-д хэрэглэгчийн мэдээлэл хадгалах
+    req.session.userId = user._id.toString();
+    req.session.username = user.username;
+
+    console.log(session.value);
+
     const { password: _, ...userWithoutPassword } = user.toObject();
 
-    const accessToken = generateAccessToken(user);
-    const refreshToken = generateRefreshToken(user);
-
-    refreshTokens.push(refreshToken);
-
     res.json({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-      expires_in: 30,
-      token_type: "Bearer",
+      message: "Амжилттай нэвтэрлээ",
       user: userWithoutPassword,
     });
   } catch (err) {
@@ -176,48 +165,32 @@ app.post("/api/users/login", async (req, res) => {
   }
 });
 
-// POST: Refresh access token using refresh token
-app.post("/api/auth/refresh", async (req, res) => {
-  const { refresh_token } = req.body;
-
-  if (!refresh_token) {
-    return res.status(400).json({ error: "Refresh token шаардлагатай" });
-  }
-
-  if (!refreshTokens.includes(refresh_token)) {
-    return res.status(401).json({ error: "Refresh token хүчингүй" });
-  }
-
-  try {
-    const decoded = jwt.verify(refresh_token, REFRESH_TOKEN_SECRET);
-
-    const newAccessToken = jwt.sign(
-      { id: decoded.id, username: decoded.username },
-      ACCESS_TOKEN_SECRET,
-      { expiresIn: "30s" }
-    );
-
-    res.json({
-      access_token: newAccessToken,
-      expires_in: 30,
-      token_type: "Bearer",
-    });
-  } catch (err) {
-    return res
-      .status(401)
-      .json({ error: "Refresh token хугацаа дууссан эсвэл буруу" });
-  }
+// POST: Logout (session устгах)
+app.post("/api/auth/logout", (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      return res.status(500).json({ error: "Logout хийхэд алдаа гарлаа" });
+    }
+    res.clearCookie("connect.sid");
+    res.json({ message: "Амжилттай гарлаа" });
+  });
 });
 
-// POST: Logout (refresh token-г устгах)
-app.post("/api/auth/logout", (req, res) => {
-  const { refresh_token } = req.body;
-  if (!refresh_token) {
-    return res.status(400).json({ error: "Refresh token шаардлагатай" });
+// GET: Check session status
+app.get("/api/auth/session", async (req, res) => {
+  if (req.session.userId) {
+    try {
+      const user = await User.findById(req.session.userId, "-password");
+      res.json({
+        authenticated: true,
+        user: user,
+      });
+    } catch (err) {
+      res.json({ authenticated: false });
+    }
+  } else {
+    res.json({ authenticated: false });
   }
-
-  refreshTokens = refreshTokens.filter((t) => t !== refresh_token);
-  res.json({ message: "Амжилттай гарлаа" });
 });
 
 // PUT: Хэрэглэгч засах

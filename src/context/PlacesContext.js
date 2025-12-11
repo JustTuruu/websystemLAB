@@ -76,18 +76,15 @@ export function PlacesProvider({ children }) {
 
   // Fetch all places from API
   const fetchPlaces = async () => {
-    const token = localStorage.getItem("access_token");
-    if (!token) {
-      console.log("No token, skipping places fetch");
+    if (!isAuthenticated) {
+      console.log("Not authenticated, skipping places fetch");
       return;
     }
-    
+
     try {
       dispatch({ type: actionTypes.SET_LOADING, payload: true });
       const response = await fetch(`${API_URL}/places`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: "include",
       });
       if (!response.ok) throw new Error("Газруудыг татахад алдаа гарлаа");
       const data = await response.json();
@@ -119,8 +116,8 @@ export function PlacesProvider({ children }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
+        credentials: "include",
         body: JSON.stringify({
           ...placeData,
           userId: user._id,
@@ -155,8 +152,8 @@ export function PlacesProvider({ children }) {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
+        credentials: "include",
         body: JSON.stringify({
           ...place,
           userId: user._id,
@@ -191,8 +188,8 @@ export function PlacesProvider({ children }) {
         method: "DELETE",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${localStorage.getItem("access_token")}`,
         },
+        credentials: "include",
         body: JSON.stringify({
           userId: user._id,
         }),
